@@ -1,4 +1,4 @@
-# cocos_reverse
+# cocos_revert
 一秒还原cocos creator打包后的游戏素材
 
 # 需要安装node环境
