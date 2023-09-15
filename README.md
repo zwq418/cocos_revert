@@ -11,3 +11,6 @@ https://nodejs.org/en
 
 # 给我点赞
 如果你觉得有用，请给我点小星星，这样我才有动力开发更多实用的功能
+
+# 参考资料
+https://www.momojc.cn/cocos/haiyuancoc.html
