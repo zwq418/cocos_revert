@@ -19,24 +19,30 @@ function walkSync(dirPath, compare, callback) {
     })
 }
 
-const allFilePath = [];
+const configPaths = [];
 walkSync(inputPath, file => {
     return file.name === 'config.json';
 }, jsonPath => {
-    allFilePath.push(jsonPath);
+    configPaths.push(jsonPath);
 })
 
-const spineFilePath = [];
-function readFile() {
-    allFilePath.forEach(path => {
+async function parseConfigs() {
+    let resourcesFiles = [];
+    for (let i = 0; i < configPaths.length; i++) {
+        const path = configPaths[i];
         const fileContent = fs.readFileSync(path, 'utf-8');
-        parseConfigJson(JSON.parse(fileContent));
-        spineFilePath.push(path);
+        const dirs = path.split('/');
+        const files = await parseBundleConfigJson(dirs[dirs.length - 2], JSON.parse(fileContent));
+        resourcesFiles = resourcesFiles.concat(files);
+    }
+    configPaths.forEach(async path => {
+        const dirs = path.split('/');
+        await copyOtherFiles(dirs[dirs.length - 2], resourcesFiles);
     })
+
 }
 
 const outputDir = dirPath + '/output/';
-const outputResourcesDir = outputDir + 'resources/';
 
 const EXT_MAP = {
     "cc.JsonAsset": ".json",
@@ -49,40 +55,37 @@ const EXT_MAP = {
     "cc.Asset": ".unknown"
 }
 
-const VALIDA_TYPES = [0, 1, 2, 5];
-const resourcesFiles = [];
-
-function parseConfigJson(json) {
+async function parseBundleConfigJson(bundle, json) {
 
     if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir);
     }
+    const outputResourcesDir = outputDir + bundle + '/';
     if (!fs.existsSync(outputResourcesDir)) {
         fs.mkdirSync(outputResourcesDir);
     }
 
     const { paths, types, uuids } = json;
     const indexs = Object.getOwnPropertyNames(paths);
+    const resourcesFiles = [];
     for (let i = 0; i < indexs.length; i++) {
         const order = indexs[i];
         const [ path, type] = paths[order];
-        if (VALIDA_TYPES.includes(type)) {
-            const ext = EXT_MAP[types[type]];
-            const uuid = uuids[order];
-            outputImage(path + ext, uuid);
-        }
+        outputFile(outputResourcesDir + path + EXT_MAP[types[type]], uuids[order], resourcesFiles);
     }
+    await copyFiles(resourcesFiles);
+    return resourcesFiles;
 }
 
-function outputImage(imageName, uuid) {
-    const ext = path.extname(imageName);
+function outputFile(targetFilePath, uuid, resourcesFiles) {
+    const ext = path.extname(targetFilePath);
     const u = UuidUtils.decompressUuid(uuid);
     walkSync(inputPath, file => file.name === u + ext, async filePath => {
-        resourcesFiles.push([filePath, outputResourcesDir + imageName]);
+        resourcesFiles.push([filePath, targetFilePath]);
     })
 }
 
-async function copyFiles() {
+async function copyFiles(resourcesFiles) {
     for (let i = 0; i < resourcesFiles.length; i++) {
         const [fromFile, toFile] = resourcesFiles[i];
         const fileArray = toFile.split('/');
@@ -92,6 +95,30 @@ async function copyFiles() {
     }
 }
 
-readFile();
-console.log(resourcesFiles)
-copyFiles();
+const EXCLUDE_EXTS = ['.js', '.json', '.plist'];
+async function copyOtherFiles(bundle, resourcesFiles) {
+    const extSet = new Set();
+    const mainFiles = [];
+    walkSync(inputPath + 'assets/' + bundle + '/', file => (
+        !EXCLUDE_EXTS.includes(path.extname(file.name)) &&
+        !resourcesFiles.find(([resourcePath]) => resourcePath.includes(file.name))
+        ), async filePath => {
+        const ext = path.extname(filePath).replace('.', '');
+        extSet.add(ext);
+        mainFiles.push(filePath);
+    })
+    const outputOtherDir = outputDir + bundle + '/';
+    for (const ext of extSet) {
+        if (ext) {
+            const outDir = outputOtherDir + ext;
+            await dirExists(outDir);
+        }
+    }
+    for (const filePath of mainFiles) {
+        const basename = path.basename(filePath);
+        const outDir = outputOtherDir + path.extname(filePath).replace('.', '');
+        fs.copyFileSync(filePath, outDir + '/' + basename);
+    }
+}
+
+parseConfigs();
